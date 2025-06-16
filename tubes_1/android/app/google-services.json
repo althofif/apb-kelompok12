@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "809082747922",
+    "project_id": "dapoerkita-19699",
+    "storage_bucket": "dapoerkita-19699.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:809082747922:android:e44b3c1172aa7c3ef7accb",
+        "android_client_info": {
+          "package_name": "com.example.tubes_1"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "809082747922-t5mgir14h1tr84soh5lst25thjg6t9rq.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAoIcSYHaNhqWMK0wM5PMlkA9eFagYyNwA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "809082747922-t5mgir14h1tr84soh5lst25thjg6t9rq.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "809082747922-t54k2l6dsf9bmfgfc57m98325bbnq850.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.tubes1"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
