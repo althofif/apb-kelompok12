@@ -1,8 +1,9 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:image_picker/image_picker.dart';
-import 'dart:io';
+import '../services/image_helper.dart';
+import '../services/storage_service.dart';
 
 class EditDriverProfileScreen extends StatefulWidget {
   const EditDriverProfileScreen({Key? key}) : super(key: key);
@@ -16,8 +17,12 @@ class _EditDriverProfileScreenState extends State<EditDriverProfileScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
+
+  final User? _currentUser = FirebaseAuth.instance.currentUser;
   File? _imageFile;
+  String? _currentImageUrl;
   bool _isLoading = false;
+  bool _isFetching = true;
 
   @override
   void initState() {
@@ -26,64 +31,91 @@ class _EditDriverProfileScreenState extends State<EditDriverProfileScreen> {
   }
 
   Future<void> _loadUserData() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      final doc =
-          await FirebaseFirestore.instance
-              .collection('drivers')
-              .doc(user.uid)
-              .get();
-
+    if (_currentUser == null) {
+      setState(() => _isFetching = false);
+      return;
+    }
+    // Load from Firestore first
+    final doc =
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(_currentUser!.uid)
+            .get();
+    if (mounted) {
       setState(() {
-        _nameController.text = user.displayName ?? '';
+        _nameController.text =
+            doc.data()?['name'] ?? _currentUser!.displayName ?? '';
         _phoneController.text = doc.data()?['phone'] ?? '';
+        _currentImageUrl =
+            doc.data()?['profileImageUrl'] ?? _currentUser!.photoURL;
+        _isFetching = false;
       });
     }
   }
 
   Future<void> _pickImage() async {
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
-    if (pickedFile != null) {
-      setState(() {
-        _imageFile = File(pickedFile.path);
-      });
+    final file = await ImageHelper.pickImageFromGallery();
+    if (file != null) {
+      setState(() => _imageFile = file);
     }
   }
 
   Future<void> _saveProfile() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate() || _currentUser == null) return;
 
-    setState(() {
-      _isLoading = true;
-    });
+    setState(() => _isLoading = true);
 
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user != null) {
-        // Update in Firestore
-        await FirebaseFirestore.instance
-            .collection('drivers')
-            .doc(user.uid)
-            .set({
-              'name': _nameController.text,
-              'phone': _phoneController.text,
-              'updatedAt': FieldValue.serverTimestamp(),
-            }, SetOptions(merge: true));
+      String? finalImageUrl = _currentImageUrl;
+      if (_imageFile != null) {
+        finalImageUrl = await FirebaseStorageService.uploadDriverProfile(
+          driverId: _currentUser!.uid,
+          imageFile: _imageFile!,
+        );
+      }
 
-        // Update in Auth
-        await user.updateDisplayName(_nameController.text);
+      // Update Auth
+      await _currentUser!.updateDisplayName(_nameController.text);
+      if (finalImageUrl != null) {
+        await _currentUser!.updatePhotoURL(finalImageUrl);
+      }
 
-        Navigator.pop(context, true);
+      // Update Firestore in 'users' and 'drivers' collections for consistency
+      final userData = {
+        'name': _nameController.text,
+        'phone': _phoneController.text,
+        'profileImageUrl': finalImageUrl,
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      WriteBatch batch = FirebaseFirestore.instance.batch();
+      final userRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(_currentUser!.uid);
+      final driverRef = FirebaseFirestore.instance
+          .collection('drivers')
+          .doc(_currentUser!.uid);
+      batch.set(userRef, userData, SetOptions(merge: true));
+      batch.set(driverRef, userData, SetOptions(merge: true));
+      await batch.commit();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Profil berhasil diperbarui'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.pop(context, true); // Return true to signal success
       }
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: $e')));
+      }
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -96,23 +128,11 @@ class _EditDriverProfileScreenState extends State<EditDriverProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Edit Profil'),
-        backgroundColor: Colors.green,
-        foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.save),
-            onPressed: _isLoading ? null : _saveProfile,
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('Edit Profil Driver')),
       body:
-          user == null
-              ? const Center(child: Text('Pengguna tidak ditemukan'))
+          _isFetching
+              ? const Center(child: CircularProgressIndicator())
               : Form(
                 key: _formKey,
                 child: ListView(
@@ -122,15 +142,16 @@ class _EditDriverProfileScreenState extends State<EditDriverProfileScreen> {
                       onTap: _pickImage,
                       child: Center(
                         child: CircleAvatar(
-                          radius: 50,
+                          radius: 60,
                           backgroundImage:
                               _imageFile != null
                                   ? FileImage(_imageFile!)
-                                  : user.photoURL != null
-                                  ? NetworkImage(user.photoURL!)
-                                  : null,
+                                  : (_currentImageUrl != null
+                                          ? NetworkImage(_currentImageUrl!)
+                                          : null)
+                                      as ImageProvider?,
                           child:
-                              _imageFile == null && user.photoURL == null
+                              _imageFile == null && _currentImageUrl == null
                                   ? const Icon(Icons.camera_alt, size: 40)
                                   : null,
                         ),
@@ -143,12 +164,8 @@ class _EditDriverProfileScreenState extends State<EditDriverProfileScreen> {
                         labelText: 'Nama Lengkap',
                         prefixIcon: Icon(Icons.person),
                       ),
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Nama tidak boleh kosong';
-                        }
-                        return null;
-                      },
+                      validator:
+                          (v) => v!.isEmpty ? 'Nama tidak boleh kosong' : null,
                     ),
                     const SizedBox(height: 16),
                     TextFormField(
@@ -158,37 +175,19 @@ class _EditDriverProfileScreenState extends State<EditDriverProfileScreen> {
                         prefixIcon: Icon(Icons.phone),
                       ),
                       keyboardType: TextInputType.phone,
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Nomor telepon tidak boleh kosong';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      initialValue: user.email,
-                      readOnly: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Email',
-                        prefixIcon: Icon(Icons.email),
-                      ),
+                      validator:
+                          (v) =>
+                              v!.isEmpty
+                                  ? 'Nomor telepon tidak boleh kosong'
+                                  : null,
                     ),
                     const SizedBox(height: 32),
-                    if (_isLoading)
-                      const Center(child: CircularProgressIndicator())
-                    else
-                      ElevatedButton(
-                        onPressed: _saveProfile,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
+                    _isLoading
+                        ? const Center(child: CircularProgressIndicator())
+                        : ElevatedButton(
+                          onPressed: _saveProfile,
+                          child: const Text('SIMPAN PERUBAHAN'),
                         ),
-                        child: const Text(
-                          'SIMPAN PERUBAHAN',
-                          style: TextStyle(color: Colors.white),
-                        ),
-                      ),
                   ],
                 ),
               ),

@@ -1,10 +1,10 @@
-// models/cart_item_model.dart
+// models/cart_item.dart
 
 class CartItem {
   final String id; // ID dari menu item
   final String name;
-  final int price;
-  int quantity;
+  final double price; // Menggunakan double untuk konsistensi
+  final int quantity;
   final String imageUrl;
   final String restaurantId;
   final String restaurantName;

@@ -1,38 +1,21 @@
 import 'package:flutter/foundation.dart';
-
-class CartItem {
-  final String id;
-  final String name;
-  final double price;
-  final int quantity;
-  final String imageUrl;
-  final String restaurantId;
-  final String restaurantName;
-
-  CartItem({
-    required this.id,
-    required this.name,
-    required this.price,
-    required this.quantity,
-    required this.imageUrl,
-    required this.restaurantId,
-    required this.restaurantName,
-  });
-
-  double get totalPrice => price * quantity;
-}
+import '../models/cart_item.dart'; // Import model dari file terpisah
 
 class CartProvider with ChangeNotifier {
-  final Map<String, CartItem> _items = {};
+  Map<String, CartItem> _items = {};
   String? _restaurantId;
   String? _restaurantName;
 
   Map<String, CartItem> get items => {..._items};
   String? get restaurantId => _restaurantId;
   String? get restaurantName => _restaurantName;
-  int get itemCount => _items.length;
+  int get itemCount =>
+      _items.values.fold(0, (sum, item) => sum + item.quantity);
   double get totalAmount {
-    return _items.values.fold(0, (sum, item) => sum + item.totalPrice);
+    return _items.values.fold(
+      0.0,
+      (sum, item) => sum + item.price * item.quantity,
+    );
   }
 
   bool addItem(
@@ -43,12 +26,10 @@ class CartProvider with ChangeNotifier {
     String restaurantId,
     String restaurantName,
   ) {
-    // Jika keranjang tidak kosong dan bukan dari restoran yang sama
     if (_items.isNotEmpty && _restaurantId != restaurantId) {
-      return false;
+      return false; // Gagal karena item dari restoran lain
     }
 
-    // Set restoran info jika keranjang kosong
     if (_items.isEmpty) {
       _restaurantId = restaurantId;
       _restaurantName = restaurantName;
@@ -82,14 +63,13 @@ class CartProvider with ChangeNotifier {
       );
     }
     notifyListeners();
-    return true;
+    return true; // Berhasil
   }
 
   void removeItem(String menuId) {
     _items.remove(menuId);
     if (_items.isEmpty) {
-      _restaurantId = null;
-      _restaurantName = null;
+      _clearRestaurantInfo();
     }
     notifyListeners();
   }
@@ -115,16 +95,19 @@ class CartProvider with ChangeNotifier {
     }
 
     if (_items.isEmpty) {
-      _restaurantId = null;
-      _restaurantName = null;
+      _clearRestaurantInfo();
     }
     notifyListeners();
   }
 
   void clearCart() {
     _items.clear();
+    _clearRestaurantInfo();
+    notifyListeners();
+  }
+
+  void _clearRestaurantInfo() {
     _restaurantId = null;
     _restaurantName = null;
-    notifyListeners();
   }
 }

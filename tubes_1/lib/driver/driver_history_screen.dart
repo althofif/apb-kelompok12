@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../models/order.dart' as model; // Import Order model
 
 class DriverHistoryScreen extends StatelessWidget {
   const DriverHistoryScreen({Key? key}) : super(key: key);
@@ -10,11 +11,7 @@ class DriverHistoryScreen extends StatelessWidget {
     final user = FirebaseAuth.instance.currentUser;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Riwayat Pengantaran'),
-        backgroundColor: Colors.green,
-        foregroundColor: Colors.white,
-      ),
+      appBar: AppBar(title: const Text('Riwayat Pengantaran')),
       body:
           user == null
               ? const Center(child: Text('Silakan login untuk melihat riwayat'))
@@ -23,26 +20,26 @@ class DriverHistoryScreen extends StatelessWidget {
                     FirebaseFirestore.instance
                         .collection('orders')
                         .where('driverId', isEqualTo: user.uid)
-                        .where('status', isEqualTo: 'completed')
-                        .orderBy('createdAt', descending: true)
+                        .where(
+                          'status',
+                          isEqualTo: 'Selesai',
+                        ) // Status konsisten
+                        .orderBy('deliveryTime', descending: true)
                         .snapshots(),
                 builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
+                  if (!snapshot.hasData)
                     return const Center(child: CircularProgressIndicator());
-                  }
-
-                  if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  if (snapshot.data!.docs.isEmpty)
                     return const Center(
                       child: Text('Belum ada riwayat pengantaran'),
                     );
-                  }
 
                   return ListView.builder(
                     itemCount: snapshot.data!.docs.length,
                     itemBuilder: (context, index) {
-                      final doc = snapshot.data!.docs[index];
-                      final data = doc.data() as Map<String, dynamic>;
-
+                      final order = model.Order.fromFirestore(
+                        snapshot.data!.docs[index],
+                      );
                       return Card(
                         margin: const EdgeInsets.all(8.0),
                         child: ListTile(
@@ -50,11 +47,18 @@ class DriverHistoryScreen extends StatelessWidget {
                             Icons.delivery_dining,
                             color: Colors.green,
                           ),
-                          title: Text('Pesanan #${doc.id.substring(0, 6)}'),
+                          title: Text('Pesanan #${order.id.substring(0, 6)}'),
                           subtitle: Text(
-                            'Dari: ${data['restaurantName'] ?? 'Restoran'}',
+                            'Total: Rp ${order.totalAmount.toStringAsFixed(0)}',
                           ),
-                          trailing: Text('Rp ${data['deliveryFee'] ?? '0'}'),
+                          trailing: Text(
+                            // Anda bisa format tanggal ini dengan 'intl' package
+                            order.deliveryTime?.toDate().toString() ?? 'N/A',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey,
+                            ),
+                          ),
                         ),
                       );
                     },

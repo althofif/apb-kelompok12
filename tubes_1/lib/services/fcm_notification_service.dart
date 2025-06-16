@@ -1,12 +1,10 @@
-// services/fcm_notification_service.dart
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
-// Fungsi ini harus berada di luar kelas (top-level) untuk menangani notifikasi background
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  // Anda bisa melakukan inisialisasi Firebase di sini jika perlu
   print("Handling a background message: ${message.messageId}");
 }
 
@@ -16,31 +14,29 @@ class FcmNotificationService {
       FlutterLocalNotificationsPlugin();
 
   Future<void> initialize() async {
-    // Meminta izin notifikasi dari pengguna (penting untuk iOS)
-    await _firebaseMessaging.requestPermission(
-      alert: true,
-      announcement: false,
-      badge: true,
-      carPlay: false,
-      criticalAlert: false,
-      provisional: false,
-      sound: true,
-    );
+    await _firebaseMessaging.requestPermission();
 
     // Mengambil dan menyimpan FCM token
-    // Token ini unik untuk setiap instalasi aplikasi di perangkat
-    // Anda akan menggunakan token ini di backend untuk menargetkan notifikasi
     final String? fcmToken = await _firebaseMessaging.getToken();
     print("FCM Token: $fcmToken");
-    // Anda bisa menyimpan token ini ke Firestore untuk pengguna yang login
-    // _saveTokenToDatabase(fcmToken);
+    _saveTokenToDatabase(fcmToken); // Panggil fungsi simpan token (private)
 
-    // Mengatur handler untuk notifikasi background
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+    _initLocalNotifications();
 
-    // Mengatur notifikasi lokal untuk menampilkan pesan saat aplikasi di foreground
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      print('Got a message whilst in the foreground!');
+      RemoteNotification? notification = message.notification;
+      AndroidNotification? android = message.notification?.android;
+      if (notification != null && android != null) {
+        _showLocalNotification(notification);
+      }
+    });
+  }
+
+  void _initLocalNotifications() {
     const AndroidInitializationSettings initializationSettingsAndroid =
-        AndroidInitializationSettings('app_icon'); // Pastikan ikon ada
+        AndroidInitializationSettings('@mipmap/ic_launcher');
     const DarwinInitializationSettings initializationSettingsIOS =
         DarwinInitializationSettings();
     const InitializationSettings initializationSettings =
@@ -49,40 +45,57 @@ class FcmNotificationService {
           iOS: initializationSettingsIOS,
         );
     _flutterLocalNotificationsPlugin.initialize(initializationSettings);
-
-    // Listener untuk notifikasi yang masuk saat aplikasi terbuka (foreground)
-    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      print('Got a message whilst in the foreground!');
-      print('Message data: ${message.data}');
-
-      RemoteNotification? notification = message.notification;
-      AndroidNotification? android = message.notification?.android;
-
-      if (notification != null && android != null) {
-        _flutterLocalNotificationsPlugin.show(
-          notification.hashCode,
-          notification.title,
-          notification.body,
-          const NotificationDetails(
-            android: AndroidNotificationDetails(
-              'dapoer_kita_channel',
-              'Dapoer Kita Channel',
-              channelDescription: 'Channel untuk notifikasi Dapoer Kita',
-              icon: 'app_icon',
-              importance: Importance.max,
-              priority: Priority.high,
-            ),
-          ),
-        );
-      }
-    });
   }
 
-  // Fungsi opsional untuk menyimpan token ke Firestore
-  void saveTokenToDatabase(String? token, String userId) {
-    if (token == null) return;
-    FirebaseFirestore.instance.collection('users').doc(userId).set({
+  void _showLocalNotification(RemoteNotification notification) {
+    _flutterLocalNotificationsPlugin.show(
+      notification.hashCode,
+      notification.title,
+      notification.body,
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'dapoer_kita_channel',
+          'Dapoer Kita Channel',
+          channelDescription: 'Channel untuk notifikasi Dapoer Kita',
+          icon: '@mipmap/ic_launcher',
+          importance: Importance.max,
+          priority: Priority.high,
+        ),
+      ),
+    );
+  }
+
+  // Private method untuk menyimpan token secara internal
+  void _saveTokenToDatabase(String? token) {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || token == null) return;
+
+    FirebaseFirestore.instance.collection('users').doc(user.uid).set({
       'fcmToken': token,
+      'lastUpdated': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
+  }
+
+  // Public method yang bisa dipanggil dari luar class
+  Future<void> saveTokenToDatabase(String token, String uid) async {
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(uid).set({
+        'fcmToken': token,
+        'lastUpdated': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      print("FCM Token saved for user: $uid");
+    } catch (e) {
+      print("Error saving FCM token: $e");
+    }
+  }
+
+  // Method untuk mendapatkan token FCM
+  Future<String?> getToken() async {
+    try {
+      return await _firebaseMessaging.getToken();
+    } catch (e) {
+      print("Error getting FCM token: $e");
+      return null;
+    }
   }
 }

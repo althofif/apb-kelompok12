@@ -1,17 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
-import 'package:tubes_1/main.dart' show CartScreen;
+import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/cart_provider.dart';
+import 'cart_screen.dart';
 
 class RestaurantMenuScreen extends StatefulWidget {
   final String restaurantId;
-  final String? restaurantName;
+  final String restaurantName;
 
   const RestaurantMenuScreen({
     Key? key,
     required this.restaurantId,
-    this.restaurantName,
+    required this.restaurantName,
   }) : super(key: key);
 
   @override
@@ -26,7 +27,7 @@ class _RestaurantMenuScreenState extends State<RestaurantMenuScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.restaurantName ?? 'Menu Restoran'),
+        title: Text(widget.restaurantName),
         actions: [
           IconButton(
             icon: const Icon(Icons.search),
@@ -54,11 +55,11 @@ class _RestaurantMenuScreenState extends State<RestaurantMenuScreen> {
                 .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
-            return const Center(child: Text('Error loading menu'));
+            return Center(child: Text('Error loading menu'));
           }
 
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return Center(child: CircularProgressIndicator());
           }
 
           final menuItems = snapshot.data!.docs;
@@ -75,7 +76,8 @@ class _RestaurantMenuScreenState extends State<RestaurantMenuScreen> {
                 price: (data['price'] ?? 0).toDouble(),
                 imageUrl: data['imageUrl'] ?? '',
                 restaurantId: widget.restaurantId,
-                restaurantName: widget.restaurantName ?? 'Restoran',
+                restaurantName: widget.restaurantName,
+                description: data['description'] ?? '',
               );
             },
           );
@@ -92,6 +94,7 @@ class MenuItemCard extends StatelessWidget {
   final String imageUrl;
   final String restaurantId;
   final String restaurantName;
+  final String description;
 
   const MenuItemCard({
     Key? key,
@@ -101,6 +104,7 @@ class MenuItemCard extends StatelessWidget {
     required this.imageUrl,
     required this.restaurantId,
     required this.restaurantName,
+    required this.description,
   }) : super(key: key);
 
   @override
@@ -112,15 +116,30 @@ class MenuItemCard extends StatelessWidget {
       child: ListTile(
         leading:
             imageUrl.isNotEmpty
-                ? Image.network(
-                  imageUrl,
+                ? CachedNetworkImage(
+                  imageUrl: imageUrl,
                   width: 60,
                   height: 60,
                   fit: BoxFit.cover,
+                  placeholder:
+                      (context, url) => Container(color: Colors.grey[200]),
+                  errorWidget: (context, url, error) => Icon(Icons.fastfood),
                 )
                 : const Icon(Icons.fastfood, size: 40),
         title: Text(name),
-        subtitle: Text('Rp ${price.toStringAsFixed(0)}'),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Rp ${price.toStringAsFixed(0)}'),
+            if (description.isNotEmpty)
+              Text(
+                description,
+                style: TextStyle(color: Colors.grey, fontSize: 12),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+          ],
+        ),
         trailing: IconButton(
           icon: const Icon(Icons.add_shopping_cart),
           onPressed: () {
@@ -167,11 +186,11 @@ class MenuSearchDelegate extends SearchDelegate {
 
   @override
   Widget buildResults(BuildContext context) {
-    return Container(); // Implement search results
+    return Container();
   }
 
   @override
   Widget buildSuggestions(BuildContext context) {
-    return Container(); // Implement search suggestions
+    return Container();
   }
 }

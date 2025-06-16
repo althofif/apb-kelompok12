@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '/welcome_screen.dart';
-import '/pelanggan/customer_home_screen.dart';
-import '/penjual/seller_home_screen.dart';
-import '/driver/driver_home_screen.dart';
-import '/models/user_role.dart';
+import 'screens/welcome_screen.dart';
+import 'pelanggan/customer_home_screen.dart';
+import 'penjual/seller_home_screen.dart';
+import 'driver/driver_home_screen.dart';
+// user_model bisa digunakan di sini untuk parsing yang lebih aman
+import 'models/user_model.dart';
 
 class Wrapper extends StatelessWidget {
   const Wrapper({Key? key}) : super(key: key);
@@ -15,45 +16,19 @@ class Wrapper extends StatelessWidget {
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return _buildLoadingScreen();
+        if (snapshot.connectionState == ConnectionState.active) {
+          User? user = snapshot.data;
+          if (user == null) {
+            // Pengguna tidak login, arahkan ke WelcomeScreen
+            return const WelcomeScreen();
+          } else {
+            // Pengguna login, cek perannya dan arahkan
+            return RoleBasedRedirect(uid: user.uid);
+          }
         }
-
-        if (snapshot.hasError) {
-          return _buildErrorScreen(context, 'Error checking auth status');
-        }
-
-        if (snapshot.hasData) {
-          return RoleBasedRedirect(uid: snapshot.data!.uid);
-        }
-
-        return const WelcomeScreen();
+        // Menunggu koneksi
+        return const Scaffold(body: Center(child: CircularProgressIndicator()));
       },
-    );
-  }
-
-  Widget _buildLoadingScreen() =>
-      const Scaffold(body: Center(child: CircularProgressIndicator()));
-
-  Widget _buildErrorScreen(BuildContext context, String message) {
-    return Scaffold(
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(message, style: const TextStyle(color: Colors.red)),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed:
-                  () => Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(builder: (_) => const WelcomeScreen()),
-                  ),
-              child: const Text('Kembali ke Halaman Utama'),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -67,54 +42,29 @@ class RoleBasedRedirect extends StatelessWidget {
     return FutureBuilder<DocumentSnapshot>(
       future: FirebaseFirestore.instance.collection('users').doc(uid).get(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
-        }
+        if (snapshot.connectionState == ConnectionState.done) {
+          if (snapshot.hasData && snapshot.data!.exists) {
+            // Menggunakan AppUser model untuk parsing yang lebih aman
+            final appUser = AppUser.fromFirestore(snapshot.data!);
 
-        if (snapshot.hasError) {
-          return Scaffold(
-            body: Center(child: Text('Error: ${snapshot.error}')),
-          );
-        }
-
-        if (!snapshot.hasData || !snapshot.data!.exists) {
+            switch (appUser.role) {
+              case 'Pelanggan':
+                return const CustomerHomeScreen();
+              case 'Penjual':
+                return const SellerHomeScreen();
+              case 'Driver':
+                return const DriverHomeScreen();
+              default:
+                // Jika peran tidak dikenali, kembali ke welcome screen
+                return const WelcomeScreen();
+            }
+          }
+          // Jika data user tidak ada di Firestore, default ke welcome
           return const WelcomeScreen();
         }
-
-        final data = snapshot.data!.data() as Map<String, dynamic>;
-        final role = data['role'] as String;
-
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _navigateBasedOnRole(context, role);
-        });
-
+        // Tampilkan loading indicator selagi menunggu data user
         return const Scaffold(body: Center(child: CircularProgressIndicator()));
       },
-    );
-  }
-
-  void _navigateBasedOnRole(BuildContext context, String role) {
-    Widget screen;
-    switch (role) {
-      case 'Pelanggan':
-        screen = const CustomerHomeScreen();
-        break;
-      case 'Penjual':
-        screen = const SellerHomeScreen();
-        break;
-      case 'Driver':
-        screen = const DriverHomeScreen();
-        break;
-      default:
-        screen = const WelcomeScreen();
-    }
-
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (_) => screen),
-      (route) => false,
     );
   }
 }

@@ -1,9 +1,9 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
+import '../services/database_service.dart';
+import '../services/storage_service.dart';
+import '../services/image_helper.dart';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({Key? key}) : super(key: key);
@@ -14,19 +14,20 @@ class EditProfileScreen extends StatefulWidget {
 
 class _EditProfileScreenState extends State<EditProfileScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _auth = FirebaseAuth.instance;
-  final _firestore = FirebaseFirestore.instance;
-  final _storage = FirebaseStorage.instance;
-
-  File? _profileImage;
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
-  String? _currentImageUrl;
+
+  final _auth = FirebaseAuth.instance;
+  late final DatabaseService _databaseService;
+
+  File? _imageFile;
+  String? _profileImageUrl;
   bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
+    _databaseService = DatabaseService(uid: _auth.currentUser?.uid);
     _loadUserData();
   }
 
@@ -34,220 +35,164 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     final user = _auth.currentUser;
     if (user == null) return;
 
-    setState(() => _isLoading = true);
-
-    try {
-      final doc = await _firestore.collection('users').doc(user.uid).get();
-      if (doc.exists) {
-        final data = doc.data()!;
-        _nameController.text = data['name'] ?? user.displayName ?? '';
-        _phoneController.text = data['phone'] ?? '';
-        _currentImageUrl = data['profileImageUrl'] ?? user.photoURL;
+    // Load from Firestore first for more complete data
+    final doc = await _databaseService.getUserData();
+    if (doc.exists) {
+      final data = doc.data() as Map<String, dynamic>;
+      _nameController.text = data['name'] ?? user.displayName ?? '';
+      _phoneController.text = data['phone'] ?? '';
+      if (mounted) {
+        setState(() {
+          _profileImageUrl = data['profileImageUrl'] ?? user.photoURL;
+        });
       }
-    } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Gagal memuat data profil: $e')));
-    } finally {
-      setState(() => _isLoading = false);
+    } else {
+      _nameController.text = user.displayName ?? '';
+      if (mounted) {
+        setState(() {
+          _profileImageUrl = user.photoURL;
+        });
+      }
     }
   }
 
   Future<void> _pickImage() async {
-    try {
-      final picker = ImagePicker();
-      final pickedFile = await picker.pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 85,
-        maxWidth: 800,
-      );
-
-      if (pickedFile != null) {
-        setState(() {
-          _profileImage = File(pickedFile.path);
-        });
+    final file =
+        await ImageHelper.pickImageFromGallery(); // Or use showImageSourceDialog
+    if (file != null) {
+      final error = ImageHelper.validateImage(file, maxSizeInMB: 2);
+      if (error != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error), backgroundColor: Colors.red),
+        );
+        return;
       }
-    } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Gagal memilih gambar: $e')));
+      setState(() {
+        _imageFile = file;
+      });
     }
   }
 
-  Future<String?> _uploadImage() async {
-    if (_profileImage == null) return null;
-
-    try {
-      final user = _auth.currentUser;
-      if (user == null) return null;
-
-      final ref = _storage.ref().child(
-        'profile_images/${user.uid}_${DateTime.now().millisecondsSinceEpoch}.jpg',
-      );
-      await ref.putFile(_profileImage!);
-      return await ref.getDownloadURL();
-    } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Gagal mengunggah gambar: $e')));
-      return null;
-    }
-  }
-
-  Future<void> _saveProfile() async {
+  Future<void> _updateProfile() async {
     if (!_formKey.currentState!.validate()) return;
-
-    final user = _auth.currentUser;
-    if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Anda harus login untuk mengupdate profil'),
-        ),
-      );
-      return;
-    }
 
     setState(() => _isLoading = true);
 
     try {
-      String? imageUrl = _currentImageUrl;
-      if (_profileImage != null) {
-        imageUrl = await _uploadImage();
+      final user = _auth.currentUser;
+      if (user == null) throw Exception("User not logged in.");
+
+      String? newImageUrl = _profileImageUrl;
+
+      // 1. Upload new image if selected
+      if (_imageFile != null) {
+        newImageUrl = await FirebaseStorageService.uploadUserProfile(
+          userId: user.uid,
+          imageFile: _imageFile!,
+        );
+        if (newImageUrl == null) throw Exception("Image upload failed.");
       }
 
-      await _firestore.collection('users').doc(user.uid).set({
-        'name': _nameController.text.trim(),
-        'phone': _phoneController.text.trim(),
-        'profileImageUrl': imageUrl,
-        'updatedAt': FieldValue.serverTimestamp(),
+      // 2. Update Firebase Auth profile
+      await user.updateDisplayName(_nameController.text);
+      if (newImageUrl != null) {
+        await user.updatePhotoURL(newImageUrl);
+      }
+
+      // 3. Update Firestore document
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        'name': _nameController.text,
+        'phone': _phoneController.text,
+        'profileImageUrl': newImageUrl,
       }, SetOptions(merge: true));
 
-      // Update Firebase Auth user profile
-      await user.updateDisplayName(_nameController.text.trim());
-      if (imageUrl != null) {
-        await user.updatePhotoURL(imageUrl);
-      }
-
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Profil berhasil diperbarui!')),
+        const SnackBar(
+          content: Text('Profil berhasil diperbarui'),
+          backgroundColor: Colors.green,
+        ),
       );
       Navigator.of(context).pop();
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Gagal menyimpan profil: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Gagal memperbarui profil: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Edit Profil'),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-        elevation: 1,
-        actions: [
-          IconButton(
-            onPressed: _isLoading ? null : _saveProfile,
-            icon: const Icon(Icons.check),
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('Edit Profil')),
       body:
           _isLoading
               ? const Center(child: CircularProgressIndicator())
               : SingleChildScrollView(
-                padding: const EdgeInsets.all(20.0),
+                padding: const EdgeInsets.all(16.0),
                 child: Form(
                   key: _formKey,
                   child: Column(
                     children: [
-                      Stack(
-                        children: [
-                          CircleAvatar(
-                            radius: 60,
-                            backgroundColor: Colors.grey.shade300,
-                            backgroundImage: _getProfileImage(),
-                            child: _showProfilePlaceholder(),
-                          ),
-                          Positioned(
-                            bottom: 0,
-                            right: 0,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: Colors.green,
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: Colors.white,
-                                  width: 2,
-                                ),
-                              ),
-                              child: IconButton(
-                                icon: const Icon(
-                                  Icons.camera_alt,
-                                  color: Colors.white,
-                                  size: 20,
-                                ),
-                                onPressed: _pickImage,
-                              ),
-                            ),
-                          ),
-                        ],
+                      GestureDetector(
+                        onTap: _pickImage,
+                        child: CircleAvatar(
+                          radius: 60,
+                          backgroundColor: Colors.grey[200],
+                          backgroundImage:
+                              _imageFile != null
+                                  ? FileImage(_imageFile!)
+                                  : (_profileImageUrl != null
+                                          ? NetworkImage(_profileImageUrl!)
+                                          : null)
+                                      as ImageProvider?,
+                          child:
+                              _imageFile == null && _profileImageUrl == null
+                                  ? Icon(
+                                    Icons.person,
+                                    size: 60,
+                                    color: Colors.grey[400],
+                                  )
+                                  : null,
+                        ),
                       ),
-                      const SizedBox(height: 30),
+                      const SizedBox(height: 8),
+                      const Text('Ketuk untuk mengubah gambar'),
+                      const SizedBox(height: 24),
                       TextFormField(
                         controller: _nameController,
                         decoration: const InputDecoration(
                           labelText: 'Nama Lengkap',
-                          border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.person),
                         ),
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Nama tidak boleh kosong';
-                          }
-                          if (value.length < 3) {
-                            return 'Nama terlalu pendek';
-                          }
-                          return null;
-                        },
+                        validator:
+                            (v) =>
+                                v!.isEmpty ? 'Nama tidak boleh kosong' : null,
                       ),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 16),
                       TextFormField(
                         controller: _phoneController,
                         decoration: const InputDecoration(
                           labelText: 'Nomor Telepon',
-                          border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.phone),
                         ),
                         keyboardType: TextInputType.phone,
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Nomor telepon tidak boleh kosong';
-                          }
-                          if (!RegExp(r'^[0-9]+$').hasMatch(value)) {
-                            return 'Hanya boleh berisi angka';
-                          }
-                          if (value.length < 10 || value.length > 13) {
-                            return 'Nomor telepon tidak valid';
-                          }
-                          return null;
-                        },
+                        validator:
+                            (v) =>
+                                v!.isEmpty
+                                    ? 'Nomor telepon tidak boleh kosong'
+                                    : null,
                       ),
-                      const SizedBox(height: 40),
+                      const SizedBox(height: 32),
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed: _saveProfile,
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            backgroundColor: Colors.green,
-                            foregroundColor: Colors.white,
-                          ),
-                          child: const Text('SIMPAN PERUBAHAN'),
+                          onPressed: _updateProfile,
+                          child: const Text('Simpan Perubahan'),
                         ),
                       ),
                     ],
@@ -255,22 +200,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 ),
               ),
     );
-  }
-
-  ImageProvider? _getProfileImage() {
-    if (_profileImage != null) {
-      return FileImage(_profileImage!);
-    } else if (_currentImageUrl != null) {
-      return NetworkImage(_currentImageUrl!);
-    }
-    return null;
-  }
-
-  Widget? _showProfilePlaceholder() {
-    if (_profileImage == null && _currentImageUrl == null) {
-      return Icon(Icons.person, size: 60, color: Colors.grey.shade600);
-    }
-    return null;
   }
 
   @override
