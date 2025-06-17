@@ -4,10 +4,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
+import '../screens/welcome_screen.dart';
 import 'edit_profile_screen.dart';
 import 'order_history_screen.dart';
-import '/screens/address_screen.dart'; // PERUBAHAN: Path import diperbarui
-import '/screens/welcome_screen.dart';
+import '../screens/about_screen.dart';
+import '../screens/address_screen.dart';
 
 class CustomerProfileScreen extends StatefulWidget {
   const CustomerProfileScreen({Key? key}) : super(key: key);
@@ -32,21 +33,38 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
               onPressed: () => Navigator.of(ctx).pop(),
             ),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-              child: const Text(
-                'Logout',
-                style: TextStyle(color: Colors.white),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
               ),
+              child: const Text('Logout'),
               onPressed: () async {
-                Navigator.of(ctx).pop(); // Tutup dialog
+                Navigator.of(ctx).pop();
                 await AuthService().signOut();
-                // Wrapper akan menangani navigasi ke WelcomeScreen secara otomatis
+                if (mounted) {
+                  Navigator.of(context).pushAndRemoveUntil(
+                    MaterialPageRoute(
+                      builder: (context) => const WelcomeScreen(),
+                    ),
+                    (route) => false,
+                  );
+                }
               },
             ),
           ],
         );
       },
     );
+  }
+
+  void _navigateToEditProfile() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const EditProfileScreen()),
+    );
+    if (result == true) {
+      setState(() {});
+    }
   }
 
   @override
@@ -62,7 +80,6 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
               const SizedBox(height: 16),
               ElevatedButton(
                 onPressed: () {
-                  // Arahkan ke welcome screen jika user entah bagaimana sampai di sini tanpa login
                   Navigator.of(context).pushAndRemoveUntil(
                     MaterialPageRoute(builder: (_) => const WelcomeScreen()),
                     (route) => false,
@@ -77,9 +94,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
     }
 
     return Scaffold(
-      backgroundColor: Theme.of(
-        context,
-      ).colorScheme.surfaceVariant.withOpacity(0.3),
+      backgroundColor: Theme.of(context).colorScheme.surface.withOpacity(0.3),
       body: StreamBuilder<DocumentSnapshot>(
         stream:
             FirebaseFirestore.instance
@@ -90,57 +105,79 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
-          if (!snapshot.hasData || !snapshot.data!.exists) {
-            return const Center(child: Text("Profil tidak ditemukan."));
+          if (snapshot.hasError) {
+            return Center(child: Text('Terjadi kesalahan: ${snapshot.error}'));
           }
 
-          final appUser = AppUser.fromFirestore(snapshot.data!);
+          AppUser appUser;
+          if (!snapshot.hasData || !snapshot.data!.exists) {
+            appUser = AppUser(
+              uid: _currentUser!.uid,
+              username: _currentUser!.displayName ?? 'User',
+              email: _currentUser!.email ?? '',
+              profileImageUrl: _currentUser!.photoURL,
+              phone: '',
+              role: UserRole.customer,
+              createdAt: DateTime.now(),
+            );
+          } else {
+            appUser = AppUser.fromFirestore(snapshot.data!);
+          }
 
-          return SingleChildScrollView(
-            child: Column(
-              children: [
-                _buildProfileHeader(context, appUser),
-                const SizedBox(height: 20),
-                _buildProfileMenu(
-                  context,
-                  'Edit Profil',
-                  Icons.person_outline,
-                  () => Navigator.push(
+          return RefreshIndicator(
+            onRefresh: () async => setState(() {}),
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: Column(
+                children: [
+                  _buildProfileHeader(context, appUser),
+                  const SizedBox(height: 20),
+                  _buildProfileMenu(
                     context,
-                    MaterialPageRoute(
-                      builder: (_) => const EditProfileScreen(),
+                    'Edit Profil',
+                    Icons.person_outline,
+                    _navigateToEditProfile,
+                  ),
+                  _buildProfileMenu(
+                    context,
+                    'Alamat Tersimpan',
+                    Icons.location_on_outlined,
+                    () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const AddressScreen()),
                     ),
                   ),
-                ),
-                _buildProfileMenu(
-                  context,
-                  'Alamat Tersimpan',
-                  Icons.location_on_outlined,
-                  () => Navigator.push(
+                  _buildProfileMenu(
                     context,
-                    MaterialPageRoute(builder: (_) => const AddressScreen()),
-                  ),
-                ),
-                _buildProfileMenu(
-                  context,
-                  'Riwayat Pesanan',
-                  Icons.receipt_long_outlined,
-                  () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const OrderHistoryScreen(),
+                    'Riwayat Pesanan',
+                    Icons.receipt_long_outlined,
+                    () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const OrderHistoryScreen(),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 20),
-                _buildProfileMenu(
-                  context,
-                  'Logout',
-                  Icons.logout,
-                  () => _showLogoutDialog(context),
-                  isLogout: true,
-                ),
-              ],
+                  _buildProfileMenu(
+                    context,
+                    'Tentang Aplikasi',
+                    Icons.info_outline,
+                    () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const AboutScreen()),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  _buildProfileMenu(
+                    context,
+                    'Logout',
+                    Icons.logout,
+                    () => _showLogoutDialog(context),
+                    isLogout: true,
+                  ),
+                  const SizedBox(height: 20),
+                ],
+              ),
             ),
           );
         },
@@ -157,17 +194,40 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
       ),
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 40,
-            backgroundColor: Colors.white,
-            backgroundImage:
-                user.profileImageUrl != null
-                    ? CachedNetworkImageProvider(user.profileImageUrl!)
-                    : null,
-            child:
-                user.profileImageUrl == null
-                    ? const Icon(Icons.person, size: 40)
-                    : null,
+          Container(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 3),
+            ),
+            child: CircleAvatar(
+              radius: 40,
+              backgroundColor: Colors.white,
+              child:
+                  user.profileImageUrl != null &&
+                          user.profileImageUrl!.isNotEmpty
+                      ? ClipOval(
+                        child: CachedNetworkImage(
+                          imageUrl: user.profileImageUrl!,
+                          width: 80,
+                          height: 80,
+                          fit: BoxFit.cover,
+                          placeholder:
+                              (context, url) =>
+                                  const CircularProgressIndicator(),
+                          errorWidget:
+                              (context, url, error) => Icon(
+                                Icons.person,
+                                size: 40,
+                                color: Theme.of(context).primaryColor,
+                              ),
+                        ),
+                      )
+                      : Icon(
+                        Icons.person,
+                        size: 40,
+                        color: Theme.of(context).primaryColor,
+                      ),
+            ),
           ),
           const SizedBox(width: 20),
           Expanded(
@@ -175,7 +235,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  user.username,
+                  user.username.isNotEmpty ? user.username : 'User',
                   style: const TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
@@ -183,14 +243,26 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
+                const SizedBox(height: 4),
                 Text(
-                  user.email,
+                  user.email.isNotEmpty ? user.email : 'Email tidak tersedia',
                   style: TextStyle(
                     fontSize: 16,
                     color: Colors.white.withOpacity(0.8),
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
+                if (user.phone != null && user.phone!.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    user.phone!,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.white.withOpacity(0.7),
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ],
             ),
           ),
@@ -208,8 +280,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
   }) {
     final color = isLogout ? Colors.red : Theme.of(context).colorScheme.primary;
     final textColor =
-        isLogout ? Colors.red : Theme.of(context).colorScheme.onSurface;
-
+        isLogout ? Colors.red : Theme.of(context).textTheme.bodyLarge?.color;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       child: Card(
@@ -223,7 +294,13 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
             style: TextStyle(fontWeight: FontWeight.w500, color: textColor),
           ),
           trailing:
-              isLogout ? null : const Icon(Icons.arrow_forward_ios, size: 16),
+              isLogout
+                  ? null
+                  : Icon(
+                    Icons.arrow_forward_ios,
+                    size: 16,
+                    color: Colors.grey[400],
+                  ),
         ),
       ),
     );

@@ -6,6 +6,7 @@ import '../services/auth_service.dart';
 import 'edit_seller_profile_screen.dart';
 import 'seller_payment_setting_screen.dart';
 import 'seller_analytic_screen.dart';
+import '../screens/welcome_screen.dart'; // <-- IMPORT BARU
 
 class SellerProfileScreen extends StatefulWidget {
   const SellerProfileScreen({Key? key}) : super(key: key);
@@ -16,6 +17,57 @@ class SellerProfileScreen extends StatefulWidget {
 
 class _SellerProfileScreenState extends State<SellerProfileScreen> {
   final User? _currentUser = FirebaseAuth.instance.currentUser;
+
+  // --- FUNGSI UNTUK PROSES LOGOUT ---
+  Future<void> _handleLogout() async {
+    // Tampilkan dialog konfirmasi sebelum logout
+    final bool? confirmLogout = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Konfirmasi Logout'),
+          content: const Text('Apakah Anda yakin ingin keluar dari akun ini?'),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Batal'),
+              onPressed: () {
+                Navigator.of(context).pop(false); // Mengembalikan false
+              },
+            ),
+            TextButton(
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('Logout'),
+              onPressed: () {
+                Navigator.of(context).pop(true); // Mengembalikan true
+              },
+            ),
+          ],
+        );
+      },
+    );
+
+    // Jika user menekan "Logout" (dialog mengembalikan true)
+    if (confirmLogout == true) {
+      try {
+        await AuthService().signOut();
+
+        // Navigasi ke WelcomeScreen dan hapus semua rute sebelumnya
+        if (mounted) {
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (context) => const WelcomeScreen()),
+            (Route<dynamic> route) =>
+                false, // Predikat ini menghapus semua rute
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Gagal logout: $e')));
+        }
+      }
+    }
+  }
 
   Widget _buildInfoColumn(
     String value,
@@ -93,6 +145,7 @@ class _SellerProfileScreenState extends State<SellerProfileScreen> {
           );
         }
         if (!snapshot.hasData || !snapshot.data!.exists) {
+          // ... (kode ini tidak berubah)
           return Scaffold(
             appBar: AppBar(
               title: const Text('Profil Restoran'),
@@ -151,6 +204,7 @@ class _SellerProfileScreenState extends State<SellerProfileScreen> {
           body: SingleChildScrollView(
             child: Column(
               children: [
+                // ... (bagian atas tidak berubah)
                 Stack(
                   clipBehavior: Clip.none,
                   alignment: Alignment.center,
@@ -263,9 +317,14 @@ class _SellerProfileScreenState extends State<SellerProfileScreen> {
                     );
                   },
                 ),
-                _buildOptionTile(context, 'Logout', Icons.logout, () async {
-                  await AuthService().signOut();
-                }, isLogout: true),
+                // --- UBAH CARA PEMANGGILAN FUNGSI LOGOUT ---
+                _buildOptionTile(
+                  context,
+                  'Logout',
+                  Icons.logout,
+                  _handleLogout, // Panggil fungsi _handleLogout
+                  isLogout: true,
+                ),
               ],
             ),
           ),

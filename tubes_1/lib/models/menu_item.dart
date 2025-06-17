@@ -10,6 +10,10 @@ class MenuItem {
   final String category;
   final bool available;
   final int popularity;
+  final String? restaurantName;
+  final List<dynamic>? keywords; // Ganti menjadi List<dynamic> agar lebih aman
+  final Timestamp? createdAt;
+  final Timestamp? updatedAt;
 
   MenuItem({
     required this.id,
@@ -21,10 +25,14 @@ class MenuItem {
     required this.category,
     required this.available,
     required this.popularity,
+    this.restaurantName,
+    this.keywords,
+    this.createdAt,
+    this.updatedAt,
   });
 
   factory MenuItem.fromFirestore(DocumentSnapshot doc) {
-    Map data = doc.data() as Map<String, dynamic>;
+    Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
     return MenuItem(
       id: doc.id,
       restaurantId: data['restaurantId'] ?? '',
@@ -35,6 +43,10 @@ class MenuItem {
       category: data['category'] ?? '',
       available: data['available'] ?? false,
       popularity: data['popularity'] ?? 0,
+      restaurantName: data['restaurantName'] as String?,
+      keywords: data['keywords'] as List<dynamic>?,
+      createdAt: data['createdAt'] as Timestamp?,
+      updatedAt: data['updatedAt'] as Timestamp?,
     );
   }
 
@@ -48,7 +60,10 @@ class MenuItem {
       'category': category,
       'available': available,
       'popularity': popularity,
-      'timestamp': FieldValue.serverTimestamp(),
+      'restaurantName': restaurantName,
+      'keywords': keywords,
+      'createdAt': createdAt,
+      'updatedAt': updatedAt,
     };
   }
 }

@@ -25,12 +25,11 @@ class _SearchResultScreenState extends State<SearchResultScreen> {
   Future<List<dynamic>> _performSearch() async {
     final String queryLower = widget.query.toLowerCase();
 
-    // Search for restaurants
+    // Asumsi pencarian berdasarkan keywords, bisa disesuaikan
     final restaurantQuery = FirebaseFirestore.instance
         .collection('restaurants')
         .where('keywords', arrayContains: queryLower);
 
-    // Search for menus
     final menuQuery = FirebaseFirestore.instance
         .collection('menus')
         .where('keywords', arrayContains: queryLower);
@@ -42,6 +41,7 @@ class _SearchResultScreenState extends State<SearchResultScreen> {
         restaurantResults.docs
             .map((doc) => RestaurantModel.fromFirestore(doc))
             .toList();
+
     final List<MenuItem> menus =
         menuResults.docs.map((doc) => MenuItem.fromFirestore(doc)).toList();
 
@@ -90,7 +90,7 @@ class _SearchResultScreenState extends State<SearchResultScreen> {
 
   Widget _buildSectionHeader(String title) {
     return Padding(
-      padding: const EdgeInsets.all(16.0),
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
       child: Text(
         title,
         style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -102,51 +102,65 @@ class _SearchResultScreenState extends State<SearchResultScreen> {
     BuildContext context,
     RestaurantModel restaurant,
   ) {
-    return ListTile(
-      leading: CircleAvatar(
-        backgroundImage:
-            restaurant.imageUrl != null
-                ? CachedNetworkImageProvider(restaurant.imageUrl!)
-                : null,
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundImage:
+              restaurant.imageUrl != null
+                  ? CachedNetworkImageProvider(restaurant.imageUrl!)
+                  : null,
+          child:
+              restaurant.imageUrl == null ? const Icon(Icons.storefront) : null,
+        ),
+        title: Text(restaurant.name),
+        subtitle: Text(restaurant.category),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder:
+                  (_) => RestaurantMenuScreen(
+                    restaurantId: restaurant.id,
+                    restaurantName: restaurant.name,
+                  ),
+            ),
+          );
+        },
       ),
-      title: Text(restaurant.name),
-      subtitle: Text(restaurant.category),
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder:
-                (_) => RestaurantMenuScreen(
-                  restaurantId: restaurant.id,
-                  restaurantName: restaurant.name,
-                ),
-          ),
-        );
-      },
     );
   }
 
+  // --- PERBAIKAN UTAMA DI SINI ---
+  // Widget ini menjadi lebih sederhana dan efisien tanpa FutureBuilder
   Widget _buildMenuTile(BuildContext context, MenuItem menu) {
-    return ListTile(
-      leading: CircleAvatar(
-        backgroundImage: CachedNetworkImageProvider(menu.imageUrl),
+    final String restaurantName =
+        menu.restaurantName ?? 'Resto tidak diketahui';
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundImage: CachedNetworkImageProvider(menu.imageUrl),
+        ),
+        title: Text(menu.name),
+        subtitle: Text(
+          "dari: $restaurantName\nRp ${menu.price.toStringAsFixed(0)}",
+        ),
+        isThreeLine: true,
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder:
+                  (_) => RestaurantMenuScreen(
+                    restaurantId: menu.restaurantId,
+                    restaurantName: restaurantName,
+                  ),
+            ),
+          );
+        },
       ),
-      title: Text(menu.name),
-      subtitle: Text('Rp ${menu.price.toStringAsFixed(0)}'),
-      onTap: () {
-        // Navigasi ke halaman restoran dari menu yang ditemukan
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder:
-                (_) => RestaurantMenuScreen(
-                  restaurantId: menu.restaurantId,
-                  restaurantName:
-                      "Nama Restoran", // Anda perlu mengambil nama resto dari ID
-                ),
-          ),
-        );
-      },
     );
   }
 }

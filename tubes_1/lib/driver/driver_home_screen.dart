@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '/screens/active_delivery_screen.dart'; // Import layar baru
+import 'active_delivery_screen.dart'; // INI ADALAH PERBAIKAN PATH
 import '../models/order.dart' as model;
 import 'driver_map_screen.dart';
 import 'driver_profile_screen.dart';
 import 'driver_history_screen.dart';
 
-// ... (Kelas _DriverHomeScreenState dan widget BottomNavigationBar tetap sama)
 class DriverHomeScreen extends StatefulWidget {
   const DriverHomeScreen({Key? key}) : super(key: key);
 
@@ -52,9 +51,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
   }
 }
 
-class DriverDashboardScreen extends StatelessWidget {
+class DriverDashboardScreen extends StatefulWidget {
   const DriverDashboardScreen({Key? key}) : super(key: key);
 
+  @override
+  State<DriverDashboardScreen> createState() => _DriverDashboardScreenState();
+}
+
+class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   Future<void> _handleAcceptOrder(
     BuildContext context,
     String orderId,
@@ -65,20 +69,23 @@ class DriverDashboardScreen extends StatelessWidget {
         {'status': 'Diantar', 'driverId': driverId},
       );
 
-      // Navigasi ke layar pengantaran aktif
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ActiveDeliveryScreen(orderId: orderId),
-        ),
-      );
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ActiveDeliveryScreen(orderId: orderId),
+          ),
+        );
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Gagal mengambil pesanan: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal mengambil pesanan: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -87,25 +94,58 @@ class DriverDashboardScreen extends StatelessWidget {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return const Center(child: Text("Silakan login."));
 
+    final startOfToday = DateTime(
+      DateTime.now().year,
+      DateTime.now().month,
+      DateTime.now().day,
+    );
+
     return Scaffold(
       appBar: AppBar(title: const Text('Beranda Driver')),
-      body: ListView(
-        padding: const EdgeInsets.all(16.0),
-        children: [
-          Text(
-            'Selamat datang, ${user.displayName ?? 'Driver'}!',
-            style: Theme.of(context).textTheme.headlineSmall,
-          ),
-          const SizedBox(height: 24),
-          _buildActiveOrderCard(context, user.uid), // Menampilkan pesanan aktif
-          const Divider(height: 40),
-          const Text(
-            'Pesanan Tersedia Untuk Diambil',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 12),
-          _buildAvailableOrders(context, user.uid),
-        ],
+      body: StreamBuilder<QuerySnapshot>(
+        stream:
+            FirebaseFirestore.instance
+                .collection('orders')
+                .where('driverId', isEqualTo: user.uid)
+                .where('status', isEqualTo: 'Selesai')
+                .where('deliveryTime', isGreaterThanOrEqualTo: startOfToday)
+                .snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final todaysOrders = snapshot.data?.docs ?? [];
+          final double todaysRevenue = todaysOrders.fold(0.0, (sum, doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            final deliveryFee = data['delivery_fee'] ?? 0.0;
+            return sum + (deliveryFee as num);
+          });
+
+          return RefreshIndicator(
+            onRefresh: () async {
+              setState(() {});
+            },
+            child: ListView(
+              padding: const EdgeInsets.all(16.0),
+              children: [
+                Text(
+                  'Selamat datang, ${user.displayName ?? 'Driver'}!',
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+                const SizedBox(height: 24),
+                _buildActiveOrderCard(context, user.uid),
+                const Divider(height: 40),
+                const Text(
+                  'Pesanan Tersedia Untuk Diambil',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                _buildAvailableOrders(context, user.uid),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -120,12 +160,17 @@ class DriverDashboardScreen extends StatelessWidget {
               .limit(1)
               .snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return const SizedBox.shrink(); // Tidak menampilkan apa-apa jika tidak ada order aktif
+        if (snapshot.connectionState == ConnectionState.waiting ||
+            !snapshot.hasData ||
+            snapshot.data!.docs.isEmpty) {
+          return const SizedBox.shrink();
         }
-        final activeOrder = model.Order.fromFirestore(
-          snapshot.data!.docs.first,
-        );
+
+        final activeOrderDoc = snapshot.data!.docs.first;
+        final activeOrder = model.Order.fromFirestore(activeOrderDoc);
+        final orderData = activeOrderDoc.data() as Map<String, dynamic>;
+        final restaurantName = orderData['restaurantName'] ?? 'Restoran';
+
         return Card(
           color: Colors.green[50],
           elevation: 4,
@@ -135,7 +180,7 @@ class DriverDashboardScreen extends StatelessWidget {
               "Anda memiliki 1 pengantaran aktif",
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
-            subtitle: Text("Antar pesanan ke alamat pelanggan."),
+            subtitle: Text("Antar pesanan dari $restaurantName."),
             trailing: const Icon(Icons.arrow_forward_ios),
             onTap: () {
               Navigator.push(
@@ -169,19 +214,20 @@ class DriverDashboardScreen extends StatelessWidget {
         return Column(
           children:
               snapshot.data!.docs.map((doc) {
-                final order = model.Order.fromFirestore(doc);
+                final orderData = doc.data() as Map<String, dynamic>;
+                final restaurantName =
+                    orderData['restaurantName'] ?? 'Restoran';
+                final deliveryAddress =
+                    orderData['deliveryAddressLabel'] ?? 'Alamat Tujuan';
+
                 return Card(
                   margin: const EdgeInsets.only(bottom: 8),
                   child: ListTile(
-                    title: Text(
-                      "Ambil di: Nama Restoran",
-                    ), // Ganti dengan nama restoran
-                    subtitle: Text(
-                      "Tujuan: Alamat Pelanggan",
-                    ), // Ganti dengan alamat
+                    title: Text("Ambil di: $restaurantName"),
+                    subtitle: Text("Tujuan: $deliveryAddress"),
                     trailing: ElevatedButton(
                       onPressed:
-                          () => _handleAcceptOrder(context, order.id, driverId),
+                          () => _handleAcceptOrder(context, doc.id, driverId),
                       child: const Text("Ambil"),
                     ),
                   ),

@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:provider/provider.dart';
+import '../models/menu_item.dart';
 import '../providers/cart_provider.dart';
-import 'cart_screen.dart';
 
-class RestaurantMenuScreen extends StatefulWidget {
+class RestaurantMenuScreen extends StatelessWidget {
   final String restaurantId;
   final String restaurantName;
 
@@ -16,181 +16,101 @@ class RestaurantMenuScreen extends StatefulWidget {
   }) : super(key: key);
 
   @override
-  State<RestaurantMenuScreen> createState() => _RestaurantMenuScreenState();
-}
-
-class _RestaurantMenuScreenState extends State<RestaurantMenuScreen> {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  String _searchQuery = '';
-
-  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.restaurantName),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: () {
-              showSearch(context: context, delegate: MenuSearchDelegate());
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.shopping_cart),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const CartScreen()),
-              );
-            },
-          ),
-        ],
-      ),
+      appBar: AppBar(title: Text(restaurantName)),
       body: StreamBuilder<QuerySnapshot>(
+        // PERBAIKAN: Query untuk mengambil menu berdasarkan restaurantId
         stream:
-            _firestore
-                .collection('restaurants')
-                .doc(widget.restaurantId)
-                .collection('menu')
+            FirebaseFirestore.instance
+                .collection('menus')
+                .where('restaurantId', isEqualTo: restaurantId)
                 .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
-            return Center(child: Text('Error loading menu'));
+            return const Center(child: Text('Gagal memuat menu.'));
           }
-
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return Center(child: CircularProgressIndicator());
+            return const Center(child: CircularProgressIndicator());
           }
-
-          final menuItems = snapshot.data!.docs;
+          if (snapshot.data!.docs.isEmpty) {
+            return const Center(
+              child: Text('Restoran ini belum memiliki menu.'),
+            );
+          }
 
           return ListView.builder(
-            itemCount: menuItems.length,
+            itemCount: snapshot.data!.docs.length,
             itemBuilder: (context, index) {
-              final menuItem = menuItems[index];
-              final data = menuItem.data() as Map<String, dynamic>;
-
-              return MenuItemCard(
-                id: menuItem.id,
-                name: data['name'] ?? 'No name',
-                price: (data['price'] ?? 0).toDouble(),
-                imageUrl: data['imageUrl'] ?? '',
-                restaurantId: widget.restaurantId,
-                restaurantName: widget.restaurantName,
-                description: data['description'] ?? '',
+              final menuItem = MenuItem.fromFirestore(
+                snapshot.data!.docs[index],
               );
+              return _buildMenuCard(context, menuItem);
             },
           );
         },
       ),
     );
   }
-}
 
-class MenuItemCard extends StatelessWidget {
-  final String id;
-  final String name;
-  final double price;
-  final String imageUrl;
-  final String restaurantId;
-  final String restaurantName;
-  final String description;
-
-  const MenuItemCard({
-    Key? key,
-    required this.id,
-    required this.name,
-    required this.price,
-    required this.imageUrl,
-    required this.restaurantId,
-    required this.restaurantName,
-    required this.description,
-  }) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildMenuCard(BuildContext context, MenuItem menu) {
     final cart = Provider.of<CartProvider>(context, listen: false);
-
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: ListTile(
-        leading:
-            imageUrl.isNotEmpty
-                ? CachedNetworkImage(
-                  imageUrl: imageUrl,
-                  width: 60,
-                  height: 60,
-                  fit: BoxFit.cover,
-                  placeholder:
-                      (context, url) => Container(color: Colors.grey[200]),
-                  errorWidget: (context, url, error) => Icon(Icons.fastfood),
-                )
-                : const Icon(Icons.fastfood, size: 40),
-        title: Text(name),
+        contentPadding: const EdgeInsets.all(12),
+        leading: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: CachedNetworkImage(
+            imageUrl: menu.imageUrl,
+            width: 60,
+            height: 60,
+            fit: BoxFit.cover,
+            placeholder: (context, url) => Container(color: Colors.grey[200]),
+            errorWidget:
+                (context, url, error) => const Icon(Icons.fastfood, size: 40),
+          ),
+        ),
+        title: Text(
+          menu.name,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Rp ${price.toStringAsFixed(0)}'),
-            if (description.isNotEmpty)
-              Text(
-                description,
-                style: TextStyle(color: Colors.grey, fontSize: 12),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+            Text('Rp ${menu.price.toStringAsFixed(0)}'),
+            if (menu.description.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 4.0),
+                child: Text(
+                  menu.description,
+                  style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
           ],
         ),
         trailing: IconButton(
-          icon: const Icon(Icons.add_shopping_cart),
+          icon: const Icon(Icons.add_shopping_cart, color: Colors.orange),
           onPressed: () {
             cart.addItem(
-              id,
-              price,
-              name,
-              imageUrl,
-              restaurantId,
-              restaurantName,
+              menu.id,
+              menu.price,
+              menu.name,
+              menu.imageUrl,
+              menu.restaurantId,
+              menu.restaurantName ?? restaurantName,
             );
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('$name ditambahkan ke keranjang')),
+              SnackBar(
+                content: Text('${menu.name} ditambahkan ke keranjang'),
+                duration: const Duration(seconds: 1),
+              ),
             );
           },
         ),
       ),
     );
-  }
-}
-
-class MenuSearchDelegate extends SearchDelegate {
-  @override
-  List<Widget> buildActions(BuildContext context) {
-    return [
-      IconButton(
-        icon: const Icon(Icons.clear),
-        onPressed: () {
-          query = '';
-        },
-      ),
-    ];
-  }
-
-  @override
-  Widget buildLeading(BuildContext context) {
-    return IconButton(
-      icon: const Icon(Icons.arrow_back),
-      onPressed: () {
-        close(context, null);
-      },
-    );
-  }
-
-  @override
-  Widget buildResults(BuildContext context) {
-    return Container();
-  }
-
-  @override
-  Widget buildSuggestions(BuildContext context) {
-    return Container();
   }
 }

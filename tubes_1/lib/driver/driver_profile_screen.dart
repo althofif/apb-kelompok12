@@ -4,12 +4,45 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
+import '../screens/welcome_screen.dart'; // <-- IMPORT BARU
 import 'edit_driver_profile_screen.dart';
 import 'vehicle_information_screen.dart';
-import 'driver_document_screen.dart'; // Import layar baru
+import 'driver_document_screen.dart';
 
 class DriverProfileScreen extends StatelessWidget {
   const DriverProfileScreen({Key? key}) : super(key: key);
+
+  // --- FUNGSI BARU UNTUK LOGOUT ---
+  Future<void> _handleLogout(BuildContext context) async {
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Konfirmasi Logout'),
+            content: const Text('Apakah Anda yakin ingin keluar?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Batal'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                style: TextButton.styleFrom(foregroundColor: Colors.red),
+                child: const Text('Logout'),
+              ),
+            ],
+          ),
+    );
+
+    if (confirm == true) {
+      await AuthService().signOut();
+      // Navigasi ke WelcomeScreen dan hapus semua halaman sebelumnya
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => const WelcomeScreen()),
+        (route) => false,
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -24,14 +57,8 @@ class DriverProfileScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Profil Driver'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () async {
-              await AuthService().signOut();
-            },
-          ),
-        ],
+        automaticallyImplyLeading: false,
+        // PERBAIKAN: Tombol logout di kanan atas dihapus
       ),
       body: StreamBuilder<DocumentSnapshot>(
         stream:
@@ -55,6 +82,19 @@ class DriverProfileScreen extends StatelessWidget {
               _buildProfileHeader(appUser),
               const SizedBox(height: 24),
               _buildProfileMenu(context),
+              const SizedBox(height: 16),
+              // --- PERBAIKAN: Tombol logout ditambahkan di sini ---
+              Card(
+                color: Colors.red[50],
+                child: ListTile(
+                  leading: const Icon(Icons.logout, color: Colors.red),
+                  title: const Text(
+                    'Logout',
+                    style: TextStyle(color: Colors.red),
+                  ),
+                  onTap: () => _handleLogout(context),
+                ),
+              ),
             ],
           );
         },
@@ -63,6 +103,7 @@ class DriverProfileScreen extends StatelessWidget {
   }
 
   Widget _buildProfileHeader(AppUser user) {
+    // ... (widget ini tidak berubah)
     return Column(
       children: [
         CircleAvatar(
@@ -92,6 +133,7 @@ class DriverProfileScreen extends StatelessWidget {
   }
 
   Widget _buildProfileMenu(BuildContext context) {
+    // ... (widget ini tidak berubah)
     return Column(
       children: [
         Card(
@@ -122,7 +164,6 @@ class DriverProfileScreen extends StatelessWidget {
                 ),
           ),
         ),
-        // --- MENU BARU DITAMBAHKAN DI SINI ---
         Card(
           child: ListTile(
             leading: const Icon(

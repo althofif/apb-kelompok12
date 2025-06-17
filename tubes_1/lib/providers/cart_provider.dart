@@ -1,10 +1,17 @@
+// providers/cart_provider.dart
 import 'package:flutter/foundation.dart';
-import '../models/cart_item.dart'; // Import model dari file terpisah
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
+import '../models/cart_item.dart';
 
 class CartProvider with ChangeNotifier {
   Map<String, CartItem> _items = {};
   String? _restaurantId;
   String? _restaurantName;
+
+  static const String _cartKey = 'cart_items';
+  static const String _restaurantIdKey = 'restaurant_id';
+  static const String _restaurantNameKey = 'restaurant_name';
 
   Map<String, CartItem> get items => {..._items};
   String? get restaurantId => _restaurantId;
@@ -16,6 +23,61 @@ class CartProvider with ChangeNotifier {
       0.0,
       (sum, item) => sum + item.price * item.quantity,
     );
+  }
+
+  // Initialize cart from local storage
+  Future<void> initializeCart() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      // Load restaurant info
+      _restaurantId = prefs.getString(_restaurantIdKey);
+      _restaurantName = prefs.getString(_restaurantNameKey);
+
+      // Load cart items
+      final cartData = prefs.getString(_cartKey);
+      if (cartData != null) {
+        final Map<String, dynamic> cartMap = jsonDecode(cartData);
+        _items = cartMap.map(
+          (key, value) => MapEntry(key, CartItem.fromJson(value)),
+        );
+        notifyListeners();
+      }
+    } catch (e) {
+      print('Error loading cart: $e');
+    }
+  }
+
+  // Save cart to local storage
+  Future<void> _saveCart() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      // Save restaurant info
+      if (_restaurantId != null) {
+        await prefs.setString(_restaurantIdKey, _restaurantId!);
+      } else {
+        await prefs.remove(_restaurantIdKey);
+      }
+
+      if (_restaurantName != null) {
+        await prefs.setString(_restaurantNameKey, _restaurantName!);
+      } else {
+        await prefs.remove(_restaurantNameKey);
+      }
+
+      // Save cart items
+      if (_items.isNotEmpty) {
+        final cartMap = _items.map(
+          (key, value) => MapEntry(key, value.toJson()),
+        );
+        await prefs.setString(_cartKey, jsonEncode(cartMap));
+      } else {
+        await prefs.remove(_cartKey);
+      }
+    } catch (e) {
+      print('Error saving cart: $e');
+    }
   }
 
   bool addItem(
@@ -62,6 +124,8 @@ class CartProvider with ChangeNotifier {
         ),
       );
     }
+
+    _saveCart();
     notifyListeners();
     return true; // Berhasil
   }
@@ -71,6 +135,7 @@ class CartProvider with ChangeNotifier {
     if (_items.isEmpty) {
       _clearRestaurantInfo();
     }
+    _saveCart();
     notifyListeners();
   }
 
@@ -97,12 +162,15 @@ class CartProvider with ChangeNotifier {
     if (_items.isEmpty) {
       _clearRestaurantInfo();
     }
+
+    _saveCart();
     notifyListeners();
   }
 
   void clearCart() {
     _items.clear();
     _clearRestaurantInfo();
+    _saveCart();
     notifyListeners();
   }
 

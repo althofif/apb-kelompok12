@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'order_history_screen.dart';
+import 'customer_home_screen.dart'; // Import home screen
 
 class OrderSuccessScreen extends StatelessWidget {
   const OrderSuccessScreen({Key? key}) : super(key: key);
@@ -12,8 +12,10 @@ class OrderSuccessScreen extends StatelessWidget {
           padding: const EdgeInsets.all(24.0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Icon(Icons.check_circle, color: Colors.green, size: 100),
+              const Spacer(),
+              const Icon(Icons.check_circle, color: Colors.green, size: 100),
               const SizedBox(height: 24),
               const Text(
                 'Pesanan Berhasil!',
@@ -22,43 +24,44 @@ class OrderSuccessScreen extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               const Text(
-                'Pesanan Anda telah diterima dan sedang disiapkan.',
+                'Pesanan Anda telah diterima dan sedang disiapkan. Silakan cek status pesanan Anda secara berkala.',
                 style: TextStyle(fontSize: 16, color: Colors.grey),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 8),
-              const Text(
-                'Driver akan segera mengambil pesanan Anda.',
-                style: TextStyle(fontSize: 16, color: Colors.grey),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 40),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.of(context).popUntil((route) => route.isFirst);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    backgroundColor: Colors.green,
-                    foregroundColor: Colors.white,
-                  ),
-                  child: const Text('KEMBALI KE BERANDA'),
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextButton(
+              const Spacer(),
+              ElevatedButton(
                 onPressed: () {
-                  Navigator.of(context).popUntil((route) => route.isFirst);
-                  // Navigate to orders screen
-                  Navigator.of(context).push(
+                  // Kembali ke halaman utama
+                  Navigator.of(context).pushAndRemoveUntil(
                     MaterialPageRoute(
-                      builder: (ctx) => const OrderHistoryScreen(),
+                      builder: (context) => const CustomerHomeScreen(),
                     ),
+                    (route) => false,
                   );
                 },
-                child: const Text('LIHAT DETAIL PESANAN'),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
+                child: const Text('KEMBALI KE BERANDA'),
+              ),
+              const SizedBox(height: 16),
+              OutlinedButton(
+                onPressed: () {
+                  // Hapus semua halaman, buka home, lalu langsung buka history
+                  Navigator.of(context).pushAndRemoveUntil(
+                    MaterialPageRoute(
+                      builder: (context) => const CustomerHomeScreen(),
+                    ),
+                    (route) => false,
+                  );
+                  // Navigasi ini akan error jika CustomerHomeScreen tidak ada di stack
+                  // Cara di atas lebih aman
+                  // Navigator.of(context).push(MaterialPageRoute(builder: (ctx) => const OrderHistoryScreen()));
+                },
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
+                child: const Text('LIHAT RIWAYAT PESANAN'),
               ),
             ],
           ),

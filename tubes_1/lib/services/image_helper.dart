@@ -6,42 +6,95 @@ import 'package:permission_handler/permission_handler.dart';
 class ImageHelper {
   static final ImagePicker _picker = ImagePicker();
 
-  // Show dialog untuk memilih sumber gambar
+  // Show dialog untuk memilih sumber gambar - DIPERBAIKI
   static Future<File?> showImageSourceDialog(BuildContext context) async {
     return showDialog<File?>(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: Text('Pilih Sumber Gambar'),
+          title: const Text('Pilih Sumber Gambar'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
-                leading: Icon(Icons.camera_alt),
-                title: Text('Kamera'),
+                leading: const Icon(Icons.camera_alt),
+                title: const Text('Kamera'),
                 onTap: () async {
-                  Navigator.pop(context);
+                  Navigator.pop(context); // Tutup dialog
                   File? image = await pickImageFromCamera();
-                  Navigator.pop(context, image);
+                  // Kembalikan hasil langsung tanpa Navigator.pop kedua
+                  if (context.mounted) {
+                    Navigator.pop(context, image);
+                  }
                 },
               ),
               ListTile(
-                leading: Icon(Icons.photo_library),
-                title: Text('Galeri'),
+                leading: const Icon(Icons.photo_library),
+                title: const Text('Galeri'),
                 onTap: () async {
-                  Navigator.pop(context);
+                  Navigator.pop(context); // Tutup dialog
                   File? image = await pickImageFromGallery();
-                  Navigator.pop(context, image);
+                  // Kembalikan hasil langsung tanpa Navigator.pop kedua
+                  if (context.mounted) {
+                    Navigator.pop(context, image);
+                  }
                 },
               ),
             ],
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Batal'),
+            ),
+          ],
         );
       },
     );
   }
 
-  // Pick image dari kamera
+  // Alternatif yang lebih sederhana - METODE BARU
+  static Future<File?> showImageSourceDialogSimple(BuildContext context) async {
+    final ImageSource? source = await showDialog<ImageSource>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Pilih Sumber Gambar'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.camera_alt),
+                title: const Text('Kamera'),
+                onTap: () => Navigator.pop(context, ImageSource.camera),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library),
+                title: const Text('Galeri'),
+                onTap: () => Navigator.pop(context, ImageSource.gallery),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Batal'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (source == null) return null;
+
+    if (source == ImageSource.camera) {
+      return await pickImageFromCamera();
+    } else {
+      return await pickImageFromGallery();
+    }
+  }
+
+  // Pick image dari kamera - DIPERBAIKI
   static Future<File?> pickImageFromCamera() async {
     try {
       // Check camera permission
@@ -68,14 +121,25 @@ class ImageHelper {
     }
   }
 
-  // Pick image dari galeri
+  // Pick image dari galeri - DIPERBAIKI
   static Future<File?> pickImageFromGallery() async {
     try {
-      // Check photo permission
-      PermissionStatus photoStatus = await Permission.photos.request();
-      if (photoStatus != PermissionStatus.granted) {
-        print('Photo permission denied');
-        return null;
+      // Untuk Android 13+ gunakan permission yang berbeda
+      PermissionStatus photoStatus;
+      if (Platform.isAndroid) {
+        // Coba permission yang lebih spesifik dulu
+        photoStatus = await Permission.storage.request();
+        if (photoStatus != PermissionStatus.granted) {
+          // Jika gagal, coba photos permission
+          photoStatus = await Permission.photos.request();
+        }
+      } else {
+        photoStatus = await Permission.photos.request();
+      }
+
+      // Jika permission ditolak, tetap lanjutkan karena mungkin tidak diperlukan
+      if (photoStatus == PermissionStatus.denied) {
+        print('Photo permission denied, but continuing...');
       }
 
       final XFile? image = await _picker.pickImage(
@@ -98,10 +162,11 @@ class ImageHelper {
   // Pick multiple images dari galeri
   static Future<List<File>> pickMultipleImages({int maxImages = 5}) async {
     try {
-      PermissionStatus photoStatus = await Permission.photos.request();
-      if (photoStatus != PermissionStatus.granted) {
-        print('Photo permission denied');
-        return [];
+      // Permission handling yang lebih flexible
+      if (Platform.isAndroid) {
+        await Permission.storage.request();
+      } else {
+        await Permission.photos.request();
       }
 
       final List<XFile> images = await _picker.pickMultiImage(
@@ -209,7 +274,7 @@ class NetworkImageWithLoading extends StatelessWidget {
           width: width,
           height: height,
           color: Colors.grey[200],
-          child: Center(child: CircularProgressIndicator()),
+          child: const Center(child: CircularProgressIndicator()),
         );
   }
 
@@ -228,7 +293,7 @@ class NetworkImageWithLoading extends StatelessWidget {
   }
 }
 
-// Widget untuk upload gambar dengan preview
+// Widget untuk upload gambar dengan preview - DIPERBAIKI
 class ImageUploadWidget extends StatefulWidget {
   final String? initialImageUrl;
   final Function(File) onImageSelected;
@@ -261,10 +326,10 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
       children: [
         if (widget.title != null)
           Padding(
-            padding: EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.only(bottom: 8),
             child: Text(
               widget.title!,
-              style: TextStyle(fontWeight: FontWeight.w500, fontSize: 16),
+              style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 16),
             ),
           ),
         GestureDetector(
@@ -305,7 +370,7 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(Icons.add_a_photo, size: 32, color: Colors.grey[400]),
-          SizedBox(height: 8),
+          const SizedBox(height: 8),
           Text(
             'Pilih Gambar',
             style: TextStyle(color: Colors.grey[600], fontSize: 12),
@@ -316,20 +381,38 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
   }
 
   void _selectImage() async {
-    File? image = await ImageHelper.showImageSourceDialog(context);
-    if (image != null) {
-      String? validationError = ImageHelper.validateImage(image);
-      if (validationError != null) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(validationError)));
-        return;
-      }
+    try {
+      // Gunakan method yang lebih sederhana
+      File? image = await ImageHelper.showImageSourceDialogSimple(context);
+      if (image != null) {
+        String? validationError = ImageHelper.validateImage(image);
+        if (validationError != null) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(validationError),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+          return;
+        }
 
-      setState(() {
-        _selectedImage = image;
-      });
-      widget.onImageSelected(image);
+        setState(() {
+          _selectedImage = image;
+        });
+        widget.onImageSelected(image);
+      }
+    } catch (e) {
+      print('Error selecting image: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error memilih gambar: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 }
